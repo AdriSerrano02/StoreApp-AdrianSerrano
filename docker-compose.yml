@@ -1,0 +1,27 @@
+# Versión de sintaxis de Docker Compose
+version: '3.8'
+
+services:
+  # Servicio de base de datos PostgreSQL
+  db:
+    # Imagen oficial de PostgreSQL 15
+    image: postgres:15
+    # Variables de entorno que configuran la base de datos
+    environment:
+      POSTGRES_DB: store          # Nombre de la base de datos
+      POSTGRES_USER: app          # Usuario de base de datos
+      POSTGRES_PASSWORD: secr3t   # Contraseña del usuario
+    # Mapeo de puertos: host:contenedor
+    ports:
+      - "5432:5432"               # Puerto 5432 accesible desde fuera
+
+  # Servicio de la aplicación Java
+  app:
+    # Construye la imagen a partir del Dockerfile en el directorio actual
+    build: .
+    # Indica que el servicio app depende de db (db se inicia primero)
+    depends_on:
+      - db
+    # Exponer el puerto 8888 del contenedor al host
+    ports:
+      - "8888:8888"

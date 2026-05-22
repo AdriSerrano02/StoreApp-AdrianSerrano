@@ -1,0 +1,209 @@
+# ==========================================
+# Secret para la contraseña de PostgreSQL
+# ==========================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: store-db-secret
+
+type: Opaque
+
+data:
+  POSTGRES_PASSWORD: c2VjcjN0
+---
+
+# ==========================================
+# ConfigMap PostgreSQL
+# ==========================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: store-db-config
+
+data:
+  POSTGRES_DB: store
+  POSTGRES_USER: app
+---
+
+# ==========================================
+# PersistentVolumeClaim
+# ==========================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+
+spec:
+  accessModes:
+    - ReadWriteOnce
+
+  resources:
+    requests:
+      storage: 1Gi
+---
+
+# ==========================================
+# Deployment PostgreSQL
+# ==========================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: store-db
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: store-db
+
+  template:
+    metadata:
+      labels:
+        app: store-db
+
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+        - containerPort: 5432
+
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: store-db-config
+              key: POSTGRES_DB
+
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: store-db-config
+              key: POSTGRES_USER
+
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: store-db-secret
+              key: POSTGRES_PASSWORD
+
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+
+        readinessProbe:
+          tcpSocket:
+            port: 5432
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+
+# ==========================================
+# Service PostgreSQL
+# ==========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: store-db
+
+spec:
+  selector:
+    app: store-db
+
+  ports:
+  - port: 5432
+    targetPort: 5432
+---
+
+# ==========================================
+# Deployment store-app
+# ==========================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: store-app
+
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: store-app
+
+  template:
+    metadata:
+      labels:
+        app: store-app
+
+    spec:
+      containers:
+      - name: app
+        image: store-app:latest
+        imagePullPolicy: Never
+
+        securityContext:
+          allowPrivilegeEscalation: false
+
+        ports:
+        - containerPort: 8888
+
+        env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://store-db:5432/store
+
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: store-db-config
+              key: POSTGRES_USER
+
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: store-db-secret
+              key: POSTGRES_PASSWORD
+
+        - name: SERVER_PORT
+          value: "8888"
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8888
+          initialDelaySeconds: 20
+          periodSeconds: 10
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8888
+          initialDelaySeconds: 30
+          periodSeconds: 15
+---
+
+# ==========================================
+# Service store-app
+# ==========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: store-app
+
+spec:
+  type: NodePort
+
+  selector:
+    app: store-app
+
+  ports:
+  - port: 8888
+    targetPort: 8888
